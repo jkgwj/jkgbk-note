@@ -1,0 +1,12 @@
+{
+  "main": "index.ts",
+  "scripts": {
+    "prepare": "npm run build",
+    "watch": "frida-compile index.ts -w -o hook.js"
+  },
+  "devDependencies": {
+    "frida-compile": "^19.0.5",
+    "frida-il2cpp-bridge": "^0.13.0",
+    "typescript": "^5.9.3"
+  }
+}
