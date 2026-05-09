@@ -7,36 +7,39 @@
 #define true  1
 #define false 0
 
+/* 描述一个 Hook 点的配置信息 */
 typedef struct HookPointConfig {
-    const char* targetModule;
-    DWORD       offset;
-    DWORD       hookLen;
-    LPVOID      hook_handler;
-    BYTE* origBytes;
-    bool        installed;
+    const char* targetModule;   // 要 Hook 的目标模块名（例如 "player.exe"）
+    DWORD       offset;         // 指令在模块中的相对偏移量
+    DWORD       hookLen;        // 需要覆盖的指令长度（字节）
+    LPVOID      hook_handler;   // 自定义的 naked 处理函数指针
+    BYTE* origBytes;      // 备份原始指令用的缓冲区（大小需 ≥ hookLen）
+    bool        installed;      // 标记该 Hook 是否已安装
 } HookPointConfig;
 
 #define MAX_HOOKS 10
-HookPointConfig g_Hooks[MAX_HOOKS];
-int g_HookCount = 0;
+HookPointConfig g_Hooks[MAX_HOOKS]; // 存放所有 Hook 配置的数组
+int g_HookCount = 0;                // 当前已添加的 Hook 数量
 
-int g_DumpCounter = 0;
-DWORD g_TempEAX = 0;
-DWORD g_TempEDX = 0;
-void* g_SavedBuffer = NULL;
-DWORD g_SavedSize = 0;
+/* ------ 全局工作变量 ------ */
+int   g_DumpCounter = 0;           // dump 文件序号
+DWORD g_TempEAX = 0;           // 临时保存 EAX 寄存器
+DWORD g_TempEDX = 0;           // 临时保存 EDX 寄存器
+void* g_SavedBuffer = NULL;        // 缓存中的明文数据地址
+DWORD g_SavedSize = 0;           // 明文数据大小
+DWORD g_RealHookAddr = 0;           // 计算后 Hook 点的真实内存地址
+DWORD g_ReturnAddr = 0;           // 模拟 call 指令后应返回的游戏地址
 
-DWORD g_RealHookAddr = 0;
-DWORD g_ReturnAddr = 0;
+/* ------ 函数声明 ------ */
+void __stdcall DumpResource(void* data, DWORD size);          // 将指定内存数据保存为文件
+void HookHandler(void);                                        // naked 函数，Hook 的核心处理逻辑
+bool InstallHook(HookPointConfig* cfg);                        // 安装单个 Hook
+bool UninstallHook(HookPointConfig* cfg);                      // 卸载单个 Hook
+void UninstallAll(void);                                       // 卸载所有已安装的 Hook
+void AddHooks(HookPointConfig* cfg);                           // 添加一个 Hook 配置到全局数组
+void InitHook(void);                                           // 初始化并安装第一个 Hook（异步调用）
+const char* GetFileExtensionFromHeader(const void* data, size_t size); // 根据文件头魔数返回扩展名
 
-void __stdcall DumpResource(void* data, DWORD size);
-void HookHandler(void);
-bool InstallHook(HookPointConfig* cfg);
-bool UninstallHook(HookPointConfig* cfg);
-void UninstallAll(void);
-void AddHooks(HookPointConfig* cfg);
-void InitHook(void);
-const char* GetFileExtensionFromHeader(const void* data, size_t size);
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
     switch (ul_reason_for_call) {
@@ -58,7 +61,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 
 void InitHook(void) {
-    //Sleep(500);
     real_dll_init();
 
     // 初始化HOOK配置
@@ -224,12 +226,22 @@ const char* GetFileExtensionFromHeader(const void* data, size_t size)
         return ".midi";
 
     // ===================== 文本/配置格式 =====================
-    if (size >= 2 && (buf[0] == '{' || buf[0] == '[')) {
-        // 简单JSON特征检测
-        for (size_t i = 0; i < min(size, 100); i++) {
-            if (buf[i] == '"' || buf[i] == ':' || buf[i] == ',')
+    if (size >= 2 && (buf[0] == '{' || buf[0] == '['))
+    {
+        BOOL hasColon = FALSE;
+        BOOL hasQuote = FALSE;
+        size_t limit = size < 512 ? size : 512;   // 只扫描前 512 字节，避免过大文件开销
+        for (size_t i = 1; i < limit; ++i)
+        {
+            if (buf[i] == ':') hasColon = TRUE;
+            if (buf[i] == '"') hasQuote = TRUE;
+            // 如果发现冒号，基本可以确定为 JSON 对象；
+            // 如果是以数组开头，通常会有引号或逗号，这里简单用引号判断也很可靠
+            if (hasColon || (buf[0] == '[' && hasQuote))
                 return ".json";
         }
+        // 如果没找到冒号或引号，但以 { 或 [ 开头，也极大概率是 JSON，可以直接返回
+        return ".json";
     }
     if (size >= 5 && buf[0] == 0xEF && buf[1] == 0xBB && buf[2] == 0xBF)
         return ".txt"; // UTF-8 BOM文本
