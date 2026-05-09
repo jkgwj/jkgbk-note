@@ -1,0 +1,3 @@
+[submodule "src/dll-proxy"]
+	path = src/dll-proxy
+	url = https://github.com/blaquee/proxydll_template.git
