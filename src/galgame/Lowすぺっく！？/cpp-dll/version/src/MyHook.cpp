@@ -30,11 +30,90 @@ namespace MyHook
     DWORD g_PatchValue = 0x90000CC2;  // RET 0xC / NOP
     bool  g_AlphaRomPatched = false;
 
-    //区域检测
-    DWORD g_RegionCheckOffset = 0x00201DEF;
-    BYTE  g_RegionCheckSig[6]   = { 0x0F, 0x85, 0x9B, 0x00, 0x00, 0x00 }; // jne 601E90
-    BYTE  g_RegionCheckPatch[6] = { 0xE9, 0x31, 0x02, 0x00, 0x00, 0x90 }; // jmp 602025 + nop
-    bool  g_RegionPatched = false;
+
+    // 校验特征码
+    bool VerifySignature(DWORD offset, BYTE* sig, DWORD len)
+    {
+        LPVOID addr = (LPVOID)(g_BaseAddr + offset);
+        MEMORY_BASIC_INFORMATION mbi{};
+        if (!::VirtualQuery(addr, &mbi, sizeof(mbi)))
+            return false;
+        if (mbi.State != MEM_COMMIT)
+            return false;
+        if (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))
+            return false;
+        return (::memcmp(addr, sig, len) == 0);
+    }
+
+    // 写入补丁
+    void WritePatch(DWORD offset, BYTE* data, DWORD len)
+    {
+        LPVOID addr = (LPVOID)(g_BaseAddr + offset);
+        DWORD oldProtect = 0;
+        if (!::VirtualProtect(addr, len, PAGE_EXECUTE_READWRITE, &oldProtect))
+            return;
+        ::memcpy(addr, data, len);
+        ::VirtualProtect(addr, len, oldProtect, &oldProtect);
+    }
+
+    // 应用 Hook
+    void ApplyHook(HookEntry& hk)
+    {
+        if (hk.done)
+            return;
+        if (!VerifySignature(hk.sigOff, hk.sig, hk.sigLen))
+            return;
+        for (int i = 0; i < 3 && hk.patchLen[i]; ++i)
+        {
+            if (hk.patchOrig[i])
+            {
+                if (!VerifySignature(hk.patchOff[i], hk.patchOrig[i], hk.patchLen[i]))
+                    return;  // 补丁点原始指令不匹配, 放弃全部
+            }
+            WritePatch(hk.patchOff[i], hk.patchData[i], hk.patchLen[i]);
+        }
+        hk.done = true;
+    }
+
+    // 区域检测HOOK
+    BYTE g_RegionSig[6]   = { 0x0F, 0x85, 0x9B, 0x00, 0x00, 0x00 };
+    BYTE g_RegionPatch[6] = { 0xE9, 0x31, 0x02, 0x00, 0x00, 0x90 };
+    HookEntry g_RegionHook = {
+        0x00201DEF,
+        g_RegionSig, 6,
+        { 0x00201DEF },
+        { nullptr },
+        { g_RegionPatch },
+        { 6 },
+        false
+    };
+
+    // DVD检测HOOK
+    BYTE g_DVDSig[86] = {
+        0xE8, 0xEC, 0x24, 0x04, 0x00, 0x0F, 0xB7, 0xF0, 0x66, 0x85,
+        0xF6, 0x75, 0x07, 0x32, 0xC0, 0xE9, 0xCC, 0x02, 0x00, 0x00,
+        0x33, 0xC0, 0xC7, 0x45, 0xA0, 0x07, 0x00, 0x00, 0x00, 0xC7,
+        0x45, 0x9C, 0x00, 0x00, 0x00, 0x00, 0x66, 0x89, 0x45, 0x8C,
+        0x56, 0x8D, 0x55, 0x8C, 0x89, 0x45, 0xFC, 0x8D, 0x8D, 0x74,
+        0xFF, 0xFF, 0xFF, 0xE8, 0x17, 0x19, 0xF4, 0xFF, 0x83, 0xC4,
+        0x04, 0x68, 0x88, 0xA9, 0xA5, 0x00, 0x8B, 0xD0, 0xC6, 0x45,
+        0xFC, 0x01, 0x8D, 0x8D, 0x44, 0xFF, 0xFF, 0xFF, 0xE8, 0xDE,
+        0x06, 0x00, 0x00, 0x83, 0xC4, 0x04
+    };
+    BYTE g_DVDPatch1[2] = { 0x90, 0x90 };                       // xor al,al → nop;nop
+    BYTE g_DVDPatch2[5] = { 0xE9, 0xCA, 0x02, 0x00, 0x00 };    // jmp 5F5F6F → jmp 5F5F6D
+    BYTE g_DVDTargetOrig[2]  = { 0x8A, 0xC3 };                 // mov al,bl 
+    BYTE g_DVDTargetPatch[2] = { 0xB0, 0x01 };                 // mov al,1 
+
+    HookEntry g_DVDHook = {
+        0x001F5C8F,
+        g_DVDSig, 86,
+        { 0x001F5C9C, 0x001F5C9E, 0x001F5F6D },
+        { nullptr,    nullptr,    g_DVDTargetOrig },
+        { g_DVDPatch1, g_DVDPatch2, g_DVDTargetPatch },
+        { 2, 5, 2 },
+        false
+    };
 
     // 保存原始 VirtualAlloc 函数指针
     static decltype(&::VirtualAlloc) g_OriginalVirtualAlloc = ::VirtualAlloc;
@@ -161,39 +240,7 @@ namespace MyHook
     }
 #endif // USE_MODE_B
 
-    void __stdcall PatchRegionCheck()
-    {
-        // 计算区域检测实际地址
-        LPVOID addr = (LPVOID)(g_BaseAddr + g_RegionCheckOffset);
-
-        // 确认目标地址可访问
-        MEMORY_BASIC_INFORMATION mbi{};
-        if (!::VirtualQuery(addr, &mbi, sizeof(mbi)))
-            return;
-        if (mbi.State != MEM_COMMIT)
-            return;
-        if (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))
-            return;
-
-        // 比对特征码（代码解密后才匹配）
-        if (::memcmp(addr, g_RegionCheckSig, sizeof(g_RegionCheckSig)) != 0)
-            return;
-
-        // 修改为可写
-        DWORD oldProtect = 0;
-        if (!::VirtualProtect(addr, sizeof(g_RegionCheckPatch), PAGE_EXECUTE_READWRITE, &oldProtect))
-            return;
-
-        // 写入补丁
-        ::memcpy(addr, g_RegionCheckPatch, sizeof(g_RegionCheckPatch));
-
-        // 恢复保护属性
-        ::VirtualProtect(addr, sizeof(g_RegionCheckPatch), oldProtect, &oldProtect);
-
-        // 标记完成
-        g_RegionPatched = true;
-    }
-
+    //拦截 VirtualAlloc
     static LPVOID WINAPI VirtualAllocHandler(
         LPVOID lpAddress,
         SIZE_T dwSize,
@@ -228,10 +275,11 @@ namespace MyHook
         }
 #endif
 
-        // 区域检测
-        if (!g_RegionPatched && result)
+        // 通用 Hook 点 — 代码解密后自动匹配
+        if (result)
         {
-            PatchRegionCheck();
+            ApplyHook(g_RegionHook);
+            ApplyHook(g_DVDHook);
         }
 
         return result;
