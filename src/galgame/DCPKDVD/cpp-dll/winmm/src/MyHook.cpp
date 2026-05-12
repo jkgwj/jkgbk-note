@@ -52,11 +52,24 @@ namespace MyHook
         hk.done = true;
     }
 
-    // DVD检测Hook (0044A59B)
+    // 光盘检测Hook （00433852）
+    BYTE g_CDRegionSig[5] = { 0xE8, 0x59, 0xEB, 0xFF, 0xFF };
+    BYTE g_CDPatch[5] = { 0x90, 0x90, 0x90, 0x90, 0x90 };
+    HookEntry g_CDHook = {
+        0x00033852,        // 特征码偏移 
+        g_CDRegionSig, 5,      // 特征码及长度
+        { 0x00033852 },    // 补丁偏移 (与特征码起始地址相同)
+        { nullptr },       // 不额外校验原始指令
+        { g_CDPatch },    // 补丁数据
+        { 5 },             // 补丁长度 (5字节)
+        false              // 未完成标记
+    };
 
+
+    //序列号(0044A59B)
     // 补丁: jge 44A6A4 → jmp 44A6A4 + nop
     BYTE g_RegionSig[6] = { 0x0F, 0x8D, 0x03, 0x01, 0x00, 0x00 };
-    BYTE g_DVDPatch[6] = { 0xE9, 0x04, 0x01, 0x00, 0x00, 0x90 };
+    BYTE g_DVDPatch[6] = { 0xE9, 0x04, 0x01, 0x00, 0x00, 0x90 };  //懒得改名字了
 
     HookEntry g_DVDHook = {
         0x0004A59B,        // 特征码偏移 (0044A59B - 00400000)
@@ -77,7 +90,9 @@ namespace MyHook
             return 1;
 
         // 直接检测特征码并应用Hook
+        ApplyHook(g_CDHook);
         ApplyHook(g_DVDHook);
+
 
         return 0;
     }
