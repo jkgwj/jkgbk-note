@@ -4,7 +4,7 @@
 ![未Patch运行图片](img\1.png "未Patch")
 
 经典的AlphaRom  
-教程也有不少，这边使用的是[这个方案](https://github.com/ZQF-ReVN/AlphaRom_Crack)
+教程也有不少，这边使用的是[这个方案](https://github.com/ZQF-ReVN/AlphaRom_Crack)  
 因为是SiglusEngine，那么后面一般还会有一个区域检测和dvd验证
 
 那么整理一下思路，大概就是AlphaRom->过区域检测->过dvd检测->运行
