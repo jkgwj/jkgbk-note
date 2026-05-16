@@ -52,17 +52,17 @@ namespace MyHook
         hk.done = true;
     }
 
-    // ============== HOOK1 过软电池（核心校验返回值修改） ==============
-    BYTE g_Hook1Sig[6] = { 0x8A,0xC3,0xEB,0x02,0x32,0xC0 };
-    BYTE g_Hook1Patch[6] = { 0xB0,0x01,0xEB,0x02,0xB0,0x01 };
+    // ============== HOOK1  ==============
+    BYTE g_Hook1Sig[6] = { 0x75, 0x04, 0xB0, 0x01, 0x5E, 0xC3 };
+    BYTE g_Hook1Patch[2] = { 0x90,0x90};
 
     HookEntry g_SoftBatteryHook1 = {
-        0x0000149A,        // 偏移：0040149A - 00400000 = 0000149A
+        0x000017FF,        // 偏移：17FF
         g_Hook1Sig, 6,     // 特征码及长度
-        { 0x0000149A },    // 补丁偏移
+        { 0x000017FF },    // 补丁偏移
         { nullptr },       // 不额外校验原始指令
         { g_Hook1Patch },  // 补丁数据
-        { 6 },             // 补丁长度
+        { 2 },             // 补丁长度
         false              // 未完成标记
     };
 
