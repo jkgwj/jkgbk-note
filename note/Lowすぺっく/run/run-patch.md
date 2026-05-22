@@ -1,7 +1,7 @@
-# Lowすぺっく 运行补丁制作记录
+﻿# Lowすぺっく 运行补丁制作记录
 ## 随便看看
 ### 运行
-![未Patch运行图片](img\1.png "未Patch")
+![1](img\1.png "未Patch")
 
 经典的AlphaRom  
 教程也有不少，这边使用的是[这个方案](https://github.com/ZQF-ReVN/AlphaRom_Crack)  
