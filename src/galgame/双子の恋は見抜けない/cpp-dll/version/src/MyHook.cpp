@@ -85,6 +85,19 @@ namespace MyHook
         false              // 未完成标记
     };
 
+    //================关闭后无法再次启动bug================
+	BYTE g_Hook3Sig[6] = { 0xFF, 0x15, 0x28, 0x70, 0x40, 0x00 };   // FF 15 28 70 40 00
+	BYTE g_Hook3Patch[6] = { 0xEB, 0x26, 0x90, 0x90, 0x90, 0x90 }; 
+    HookEntry g_SoftBatteryHook3 = {
+        0x00045D7,        // 偏移：45D7
+        g_Hook3Sig, 6,     // 特征码及长度
+        { 0x00045D7 },    // 补丁偏移
+        { nullptr },       // 不额外校验原始指令
+        { g_Hook3Patch },  // 补丁数据
+        { 6 },             // 补丁长度
+        false              // 未完成标记
+	};
+
 
     DWORD __stdcall InitHook(LPVOID lpParam)
     {
@@ -96,6 +109,7 @@ namespace MyHook
         // 应用两个软电池HOOK
         ApplyHook(g_SoftBatteryHook1);
         ApplyHook(g_SoftBatteryHook2);
+		ApplyHook(g_SoftBatteryHook3);
 
         return 0;
     }
